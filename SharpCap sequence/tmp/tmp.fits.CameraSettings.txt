@@ -1,0 +1,75 @@
+[HD Camera]
+FrameType=Light
+#サイズ
+Resolution=1280x720
+FPS=30.00
+#モード
+Colour Space=MJPG
+#出力形式
+Output Format=SER file (*.ser)(Auto)
+#フレームレート
+Frame Rate Limit=Maximum
+#露出時間
+Exposure=15.6250ms(Auto)
+#タイムスタンプ
+Timestamp Frames=Off
+#輝度
+Brightness=50
+#コントラスト
+Contrast=32
+#色相
+Hue=0
+#飽和
+Saturation=32
+#シャープネス
+Sharpness=4
+#ガンマ
+Gamma=8
+#ホワイトバランス
+White Balance=5000(Auto)
+#逆光補正
+Backlight Compensation=0
+#ゲイン
+Gain=0
+#CA還元/シンセティックブルー
+CA Reduction/Synthetic Blue=Off
+#露出したピクセルをマスクする
+Mask over exposed pixels=Off
+#フリップ（ダーク/フラット後）
+Flip (after dark/flat)=None
+#トレイル幅
+Trail Width=3
+#トレイルの最小長
+Minimum Trail Length=100
+#トレイル検出感度
+Trail Detection Sensitivity=9
+#サテライトトレイルを削除する
+Remove Satellite Trails=Off
+#背景減算
+Background Subtraction=Off
+#自動位置合わせ(惑星/銀河)
+Planet/Disk Stabilization=Off
+#しきい値
+Banding Threshold=10
+#バンディング除去
+Banding Suppression=0
+#フラット補正
+Apply Flat=None
+#ダークスケーリング（実験的）
+Dark Scaling (Experimental)=Off
+#ホットピクセル感度
+Hot Pixel Sensitivity=5
+#ダーク補正
+Subtract Dark=None
+DisplayStretchEnable=1
+NegativeDisplay=0
+#シャドウポイントを表示
+Display Black Point=0
+#中間調ポイントを表示する
+Display MidTone Point=0.5
+#ハイライトポイントを表示
+Display White Point=1
+#注意
+Notes=
+TimeStamp=2025-07-11T02:22:56.0031939Z
+SharpCapVersion=4.1.13332.0

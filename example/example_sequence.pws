@@ -1,0 +1,7 @@
+################################################################################
+# EXAMPLE SEQUENCE FOR BULL'S EYE SEQUENCER                                    #
+# WRITTEN BY KIYOAKI OKUDAIRA AT 2025-07-20                                    #
+################################################################################
+CONNECTPWI4
+GOTORADEC RA=20:47:55.0 DEC=+10:22:31.8 AT=ASAP
+TRACKSAT 40267 FROM=2025-07-19T22:11:10 TO=ALT=15

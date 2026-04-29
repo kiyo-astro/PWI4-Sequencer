@@ -1,0 +1,6 @@
+src/
+build/
+dist/PWI4 Sequencer/
+makeandinstall.bat
+PWI4 Sequencer.spec
+.DS_Store

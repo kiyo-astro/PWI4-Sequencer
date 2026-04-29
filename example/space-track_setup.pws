@@ -1,0 +1,5 @@
+################################################################################
+# SPACE-TRACK.ORG SETUP SEQUENCE FOR BULL'S EYE SEQUENCER                      #
+# WRITTEN BY KIYOAKI OKUDAIRA AT 2025-07-20                                    #
+################################################################################
+CONFIGSPACETRACK ID=example@kyushu-u.ac.jp PASSWORD=password
