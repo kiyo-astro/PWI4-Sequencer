@@ -10,13 +10,14 @@
 # bugfix 2026.03.23: Sequence file encoding type error fixed (ver 1.0.5)                        #
 # bugfix 2026.04.07: Syntax error when receiving negative DEC value fixed (ver 1.0.6)           #
 # update 2026.04.28: GUI support and sequence file editor (ver 2.0.0)                           #
+# update 2026.05.04: Internal update function (ver 2.0.1)                                       #
 #-----------------------------------------------------------------------------------------------#
 
 #-----------------------------------------------------------------------------------------------#
 # VERSION                                                                                       #
 #-----------------------------------------------------------------------------------------------#
-version = "2.0.0"
-version_number = 2026042920000
+version = "2.0.1"
+version_number = 2026050420100
 
 #-----------------------------------------------------------------------------------------------#
 # OPTIONS                                                                                       #
@@ -32,6 +33,17 @@ import queue
 import threading
 import time
 import traceback
+import shutil
+import tempfile
+import subprocess
+import urllib.request
+import ssl
+import zipfile
+
+try:
+    import certifi
+except Exception:
+    certifi = None
 from dataclasses import dataclass
 from datetime import datetime
 from os import path
@@ -43,6 +55,10 @@ from PIL import Image, ImageTk
 
 APP_NAME = "PWI4 Sequencer for SSDL BULL\'s-eye"
 COPYRIGHT_TEXT = "Copyright (c) 2026 Kiyoaki Okudaira - Kyushu University / IAU-CPS SatHub"
+
+UPDATE_VERSION_URL = "https://github.com/kiyo-astro/PWI4-Sequencer/raw/refs/heads/main/dist/version_check.txt"
+UPDATE_DETAIL_URL = "https://github.com/kiyo-astro/PWI4-Sequencer/raw/refs/heads/main/dist/update_detail.txt"
+UPDATE_ZIP_URL = "https://github.com/kiyo-astro/PWI4-Sequencer/raw/refs/heads/main/dist/PWI4%20Sequencer.zip"
 
 if sys.platform.startswith("win"):
     try:
@@ -67,6 +83,82 @@ scscript_PATH = appPATH + "SharpCap sequence/"
 readme_PATH = appPATH + "README.txt"
 preference_PATH = appPATH + "_internal/preferences/"
 src_PATH = appPATH + "_internal/src/"
+
+
+def parse_version_number(text) -> int:
+    """Extract an integer build/version number from a text response."""
+    for token in str(text).replace("\r", "\n").split():
+        cleaned = "".join(ch for ch in token if ch.isdigit())
+        if cleaned:
+            return int(cleaned)
+    raise ValueError(f"No numeric version number found in: {text!r}")
+
+
+def get_https_ssl_context():
+    """Return an SSL context that works in Windows/PyInstaller environments.
+
+    Some Windows builds cannot find a local CA certificate store, which causes
+    urllib to raise CERTIFICATE_VERIFY_FAILED.  When certifi is bundled with
+    the app, this function explicitly points urllib at certifi's CA bundle.
+    """
+    if certifi is not None:
+        return ssl.create_default_context(cafile=certifi.where())
+    return ssl.create_default_context()
+
+
+def open_url_with_ssl_fallback(req, timeout: int):
+    """Open a HTTPS request, retrying with certifi if the default CA lookup fails."""
+    try:
+        return urllib.request.urlopen(req, timeout=timeout)
+    except urllib.error.URLError as e:
+        reason = getattr(e, "reason", None)
+        is_ssl_error = isinstance(reason, ssl.SSLError) or "CERTIFICATE_VERIFY_FAILED" in str(e)
+        if not is_ssl_error:
+            raise
+        # Retry using certifi's CA bundle.  This fixes most Windows/PyInstaller
+        # environments where Python cannot locate the OS certificate store.
+        if certifi is None:
+            raise RuntimeError(
+                "SSL certificate verification failed and the certifi package is not available. "
+                "Install/bundle certifi, or include certifi in the PyInstaller build."
+            ) from e
+        return urllib.request.urlopen(req, timeout=timeout, context=get_https_ssl_context())
+
+
+def read_url_text(url: str, timeout: int = 15) -> str:
+    req = urllib.request.Request(url, headers={"User-Agent": f"{APP_NAME}/{version}"})
+    with open_url_with_ssl_fallback(req, timeout=timeout) as res:
+        data = res.read()
+    return data.decode("utf-8_sig", errors="replace").strip()
+
+
+def download_file(url: str, dst: str, timeout: int = 60):
+    req = urllib.request.Request(url, headers={"User-Agent": f"{APP_NAME}/{version}"})
+    with open_url_with_ssl_fallback(req, timeout=timeout) as res, open(dst, "wb") as f:
+        shutil.copyfileobj(res, f)
+
+
+def find_update_payload_root(extract_dir: str) -> str:
+    """Return the directory that should be copied over appPATH after extracting the update zip."""
+    entries = [path.join(extract_dir, name) for name in os.listdir(extract_dir)]
+    dirs = [entry for entry in entries if path.isdir(entry)]
+    files = [entry for entry in entries if path.isfile(entry)]
+
+    # Case 1: zip contains a single top-level folder.
+    if len(dirs) == 1 and not files:
+        return dirs[0]
+
+    # Case 2: zip contains a dist folder.
+    for d in dirs:
+        if path.basename(d).lower() == "dist":
+            return d
+
+    # Case 3: zip contents are already the application root.
+    return extract_dir
+
+
+def quote_bat(value: str) -> str:
+    return str(value).replace('"', '""')
 
 #-----------------------------------------------------------------------------------------------#
 # Optional BULL's EYE dependencies.                                                             #
@@ -925,7 +1017,9 @@ class SequencerGUI(tk.Tk):
             activeforeground=self.colors["select_fg"],
         )
         view_menu.add_command(label="Settings...", command=self.show_settings_dialog)
-        menubar.add_cascade(label="View", menu=view_menu)
+        view_menu.add_separator()
+        view_menu.add_command(label="Check for updates...", command=self.check_for_updates)
+        menubar.add_cascade(label="PWI4 Sequencer", menu=view_menu)
 
         help_menu = tk.Menu(
             menubar,
@@ -941,6 +1035,194 @@ class SequencerGUI(tk.Tk):
         help_menu.add_command(label="About", command=self.show_about_dialog)
         menubar.add_cascade(label="Help", menu=help_menu)
         self.config(menu=menubar)
+
+    def check_for_updates(self):
+        """Check GitHub-hosted version_check.txt and ask the user whether to update."""
+        # play_notification_sound()
+        self.add_log("info", "   Checking for updates...")
+        self.config(cursor="watch")
+
+        def worker():
+            try:
+                latest_text = read_url_text(UPDATE_VERSION_URL)
+                latest_number = parse_version_number(latest_text)
+                detail_text = ""
+                if latest_number > int(version_number):
+                    detail_text = read_url_text(UPDATE_DETAIL_URL)
+                self.q.put(("update_check_result", True, latest_number, detail_text, None))
+            except Exception as e:
+                self.q.put(("update_check_result", False, None, "", str(e)))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def handle_update_check_result(self, ok, latest_number, detail_text, error):
+        self.config(cursor="")
+
+        if not ok:
+            self.add_log("error", f" X ERROR : Update check failed: {error}")
+            self.ask(
+                f"Failed to check for updates.\n\nError:\n{error}",
+                sound="alert",
+                title="Update check failed",
+                parent=self,
+            )
+            return
+
+        if latest_number <= int(version_number):
+            self.add_log(
+                "info",
+                f"   You are using the latest version. Current build: {version_number}, Latest build: {latest_number}"
+            )
+            self.ask(
+                f"You are using the latest version.\n\n"
+                f"Current: Version {version} (Build {version_number})\n"
+                f"Latest build: {latest_number}",
+                sound="notification",
+                title="No updates available",
+                parent=self,
+            )
+            return
+
+        detail = detail_text.strip() or "No update details are available."
+        msg = (
+            f"A new update is available.\n\n"
+            f"Current: Version {version} (Build {version_number})\n"
+            f"Latest build: {latest_number}\n\n"
+            f"Update details:\n{detail}\n\n"
+            "Do you want to download and install this update now?\n\n"
+            "The application will close after preparing the updater."
+        )
+
+        do_update = self.ask(
+            msg,
+            sound="notification",
+            title="Update available",
+            parent=self,
+        )
+
+        if do_update:
+            self.download_and_prepare_update(latest_number)
+
+    def download_and_prepare_update(self, latest_number):
+        """Download update zip, prepare a Windows batch updater, and close the app."""
+        self.add_log("info", f"   Downloading update build {latest_number}...")
+        self.config(cursor="watch")
+
+        def worker():
+            try:
+                result = self.prepare_update_files(latest_number)
+                self.q.put(("update_prepare_result", True, result, None))
+            except Exception as e:
+                self.q.put(("update_prepare_result", False, None, str(e)))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def prepare_update_files(self, latest_number):
+        if not sys.platform.startswith("win"):
+            raise RuntimeError("The built-in updater is intended for Windows builds only.")
+
+        update_root = tempfile.mkdtemp(prefix="PWI4SequencerUpdate_")
+        zip_path = path.join(update_root, "PWI4 Sequencer.zip")
+        extract_dir = path.join(update_root, "extracted")
+        backup_dir = path.join(update_root, "backup")
+        os.makedirs(extract_dir, exist_ok=True)
+        os.makedirs(backup_dir, exist_ok=True)
+
+        download_file(UPDATE_ZIP_URL, zip_path)
+        with zipfile.ZipFile(zip_path, "r") as zf:
+            zf.extractall(extract_dir)
+
+        payload_root = find_update_payload_root(extract_dir)
+
+        # Preserve current Space-Track.org account settings.
+        current_config = preference_PATH + "spacetrack-config.json"
+        backup_config = path.join(backup_dir, "spacetrack-config.json")
+        if path.exists(current_config):
+            shutil.copy2(current_config, backup_config)
+
+        batch_path = path.join(update_root, "install_update.bat")
+        app_dir = appPATH.rstrip("/\\")
+        config_dest = path.join(app_dir, "_internal", "preferences", "spacetrack-config.json")
+        config_dest_dir = path.dirname(config_dest)
+        pid = os.getpid()
+
+        if getattr(sys, "frozen", False):
+            restart_command = f'start "" "{quote_bat(sys.executable)}"'
+        else:
+            restart_command = f'start "" "{quote_bat(sys.executable)}" "{quote_bat(path.abspath(__file__))}"'
+
+        batch_lines = [
+            "@echo off",
+            "setlocal",
+            f'set "APP_DIR={quote_bat(app_dir)}"',
+            f'set "SRC_DIR={quote_bat(payload_root)}"',
+            f'set "CONFIG_BAK={quote_bat(backup_config)}"',
+            f'set "CONFIG_DEST={quote_bat(config_dest)}"',
+            f'set "CONFIG_DEST_DIR={quote_bat(config_dest_dir)}"',
+            f'echo Updating {APP_NAME} to build {latest_number}...',
+            "echo Waiting for the running application to close...",
+            ":wait_app",
+            f'tasklist /FI "PID eq {pid}" | find "{pid}" >nul',
+            "if not errorlevel 1 (",
+            "    timeout /t 1 /nobreak >nul",
+            "    goto wait_app",
+            ")",
+            "echo Copying new files...",
+            r'xcopy "%SRC_DIR%\*" "%APP_DIR%" /E /H /C /I /Y',
+            "if errorlevel 1 (",
+            "    echo Update copy reported an error.",
+            "    pause",
+            "    exit /b 1",
+            ")",
+            'if exist "%CONFIG_BAK%" (',
+            '    if not exist "%CONFIG_DEST_DIR%" mkdir "%CONFIG_DEST_DIR%"',
+            '    copy /Y "%CONFIG_BAK%" "%CONFIG_DEST%" >nul',
+            ")",
+            "echo Update complete.",
+            restart_command,
+            "endlocal",
+            '(goto) 2>nul & del "%~f0"',
+        ]
+        with open(batch_path, "w", encoding="cp932", errors="replace", newline="\r\n") as f:
+            f.write("\r\n".join(batch_lines) + "\r\n")
+
+        return {"batch_path": batch_path, "update_root": update_root, "latest_number": latest_number}
+
+    def handle_update_prepare_result(self, ok, result, error):
+        self.config(cursor="")
+
+        if not ok:
+            self.add_log("error", f" X ERROR : Failed to prepare update: {error}")
+            self.ask(
+                f"Failed to download or prepare the update.\n\nError:\n{error}",
+                sound="alert",
+                title="Update failed",
+                parent=self,
+            )
+            return
+
+        self.add_log(
+            "done",
+            f"   Update build {result['latest_number']} was downloaded. Closing app and starting installer..."
+        )
+
+        proceed = self.ask(
+            "The update has been downloaded.\n\n"
+            "The application will now close, install the update, and restart automatically.",
+            sound="complete",
+            title="Ready to update",
+            parent=self,
+        )
+
+        if not proceed:
+            return
+
+        subprocess.Popen(
+            f'"{result["batch_path"]}"',
+            shell=True,
+            creationflags=getattr(subprocess, "CREATE_NEW_CONSOLE", 0),
+        )
+        self.destroy()
 
     def show_settings_dialog(self):
         """Edit Space-Track.org account settings saved in preferences/spacetrack-config.json."""
@@ -1410,6 +1692,12 @@ class SequencerGUI(tk.Tk):
                     self.update_execution_state(current, lines)
                 elif item[0] == "finished":
                     self.set_running_ui(False)
+                elif item[0] == "update_check_result":
+                    _, ok, latest_number, detail_text, error = item
+                    self.handle_update_check_result(ok, latest_number, detail_text, error)
+                elif item[0] == "update_prepare_result":
+                    _, ok, result, error = item
+                    self.handle_update_prepare_result(ok, result, error)
         except queue.Empty:
             pass
         self.after(100, self.process_queue)

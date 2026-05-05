@@ -1,5 +1,5 @@
 #-----------------------------------------------------------------------------------------------#
-# PWI4 Sequencer for SSDL BULL's-eye VER 2.0.0 BUILD 2026042920000                              #
+# PWI4 Sequencer for SSDL BULL's-eye VER 2.0.1 BUILD 2026050420100                              #
 # Copyright 2026 Kiyoaki Okudaira * Kyushu University / IAU-CPS SatHub                          #
 #-----------------------------------------------------------------------------------------------#
 
@@ -14,6 +14,7 @@
 # bugfix 2026.03.23: Sequence file encoding type error fixed (ver 1.0.5)                        #
 # bugfix 2026.04.07: Syntax error when receiving negative DEC value fixed (ver 1.0.6)           #
 # update 2026.04.28: GUI support and sequence file editor (ver 2.0.0)                           #
+# update 2026.05.04: Internal update function (ver 2.0.1)                                       #
 #-----------------------------------------------------------------------------------------------#
 
 #-----------------------------------------------------------------------------------------------#
