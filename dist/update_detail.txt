@@ -1,0 +1,5 @@
+Update ver 2.0.1 (build 2026050420100)
+Release date : MAY 4, 2026
+
+Bugfix : setting confirm window at Space-track.org setting fixed
+Update : internal update (menu bar > PWI 4 Sequencer > Check for updates...)

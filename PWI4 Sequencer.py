@@ -65,7 +65,8 @@ def get_base_path() -> str:
 appPATH = get_base_path() + "/"
 scscript_PATH = appPATH + "SharpCap sequence/"
 readme_PATH = appPATH + "README.txt"
-preference_PATH = appPATH + "_internal/Preferences/"
+preference_PATH = appPATH + "_internal/preferences/"
+src_PATH = appPATH + "_internal/src/"
 
 #-----------------------------------------------------------------------------------------------#
 # Optional BULL's EYE dependencies.                                                             #
@@ -92,16 +93,16 @@ def play_sound(sound_path):
 
 
 def play_notification_sound():
-    play_sound(preference_PATH + "win98 ding.wav")
+    play_sound(src_PATH + "sound/win98 ding.wav")
 
 def play_alert_sound():
-    play_sound(preference_PATH + "win98 alert.wav")
+    play_sound(src_PATH + "sound/win98 alert.wav")
 
 def play_complete_sound():
-    play_sound(preference_PATH + "zelda rest.wav")
+    play_sound(src_PATH + "sound/zelda rest.wav")
 
 def play_end_sound():
-    play_sound(preference_PATH + "zelda end.wav")
+    play_sound(src_PATH + "sound/zelda end.wav")
 
 def hms2hours(ra_hms: str) -> float:
     return int(ra_hms[0:2]) + float(ra_hms[3:5]) / 60 + float(ra_hms[6:]) / 3600
@@ -674,7 +675,7 @@ class SplashScreen(tk.Toplevel):
 
         # ===== ロゴ =====
         try:
-            img = Image.open(preference_PATH + "app_icon_full.png")
+            img = Image.open(src_PATH + "logo/app_icon_full.png")
             img.thumbnail((int(320 * scale), int(160 * scale)), Image.Resampling.LANCZOS)
             self.logo = ImageTk.PhotoImage(img)
             tk.Label(self, image=self.logo, bg="#1e1e1e").pack(pady=(30, 10))
@@ -715,7 +716,7 @@ class SequencerGUI(tk.Tk):
         super().__init__()
 
         try:
-            ico_path = preference_PATH + "icon128.ico"
+            ico_path = src_PATH + "logo/icon128.ico"
             self.iconbitmap(ico_path)
         except Exception as e:
             print("Window icon error:", e)
@@ -942,12 +943,12 @@ class SequencerGUI(tk.Tk):
         self.config(menu=menubar)
 
     def show_settings_dialog(self):
-        """Edit Space-Track.org account settings saved in Preferences/spacetrack-config.json."""
+        """Edit Space-Track.org account settings saved in preferences/spacetrack-config.json."""
         settings = tk.Toplevel(self)
         settings.title("Settings...")
 
         try:
-            settings.iconbitmap(preference_PATH + "icon128.ico")
+            settings.iconbitmap(src_PATH + "logo/icon128.ico")
         except Exception as e:
             print("Settings window icon error:", e)
 
@@ -1024,34 +1025,31 @@ class SequencerGUI(tk.Tk):
             password = password_var.get()
 
             if not identity or not password:
-                play_alert_sound()
-                self.show_silent_message(
-                    "Settings error",
+                self.ask(
                     "Identity / Email and Password are required.",
-                    kind="error",
-                    parent=settings
+                    sound="alert",
+                    title="Settings error",
+                    parent=settings,
                 )
                 return
 
             try:
-                play_end_sound()
                 os.makedirs(preference_PATH, exist_ok=True)
                 with open(config_path, "w", encoding="utf-8") as f:
                     json.dump({"identity": identity, "password": password}, f, indent=4)
-                self.show_silent_message(
-                    "Settings saved",
+                self.ask(
                     "Space-Track.org account settings were saved.",
-                    kind="info",
-                    parent=settings
+                    sound="notification",
+                    title="Settings saved",
+                    parent=settings,
                 )
                 settings.destroy()
             except Exception as e:
-                play_alert_sound()
-                self.show_silent_message(
-                    "Settings error",
+                self.ask(
                     f"Failed to save Space-Track.org settings.\n\nPath:\n{config_path}\n\nError:\n{e}",
-                    kind="error",
-                    parent=settings
+                    sound="alert",
+                    title="Settings error",
+                    parent=settings,
                 )
 
         button_frame = ttk.Frame(container)
@@ -1071,7 +1069,7 @@ class SequencerGUI(tk.Tk):
         history.title("History")
 
         try:
-            history.iconbitmap(preference_PATH + "icon128.ico")
+            history.iconbitmap(src_PATH + "logo/icon128.ico")
         except Exception as e:
             print("History window icon error:", e)
 
@@ -1151,7 +1149,7 @@ class SequencerGUI(tk.Tk):
         about.title("About")
 
         try:
-            about.iconbitmap(preference_PATH + "icon128.ico")
+            about.iconbitmap(src_PATH + "logo/icon128.ico")
         except Exception as e:
             print("About window icon error:", e)
 
@@ -1177,7 +1175,7 @@ class SequencerGUI(tk.Tk):
         try:
             if Image is None or ImageTk is None:
                 raise RuntimeError("Pillow is not installed")
-            img = Image.open(preference_PATH + "app_icon_full.png")
+            img = Image.open(src_PATH + "logo/app_icon_full.png")
             img.thumbnail((int(320 * scale), int(150 * scale)), Image.Resampling.LANCZOS)
             self.about_logo_img = ImageTk.PhotoImage(img)
             tk.Label(container, image=self.about_logo_img, bg=self.colors["bg"]).pack(pady=(4, 14))
@@ -1214,66 +1212,6 @@ class SequencerGUI(tk.Tk):
         about.bind("<Escape>", lambda _event: about.destroy())
         about.wait_window()
 
-    def show_silent_message(self, title, message, kind="info", parent=None):
-        win = tk.Toplevel(parent or self)
-        win.title(title)
-        win.configure(bg=self.colors["bg"])
-        win.transient(parent or self)
-        win.grab_set()
-        win.resizable(False, False)
-
-        try:
-            win.iconbitmap(preference_PATH + "icon128.ico")
-        except Exception:
-            pass
-
-        frame = ttk.Frame(win, padding=16)
-        frame.pack(fill="both", expand=True)
-
-        # ===== アイコン読み込み =====
-        icon_label = tk.Label(frame, bg=self.colors["bg"])
-        icon_label.pack(side="left", padx=(0, 12))
-
-        try:
-            if kind == "error":
-                icon_path = preference_PATH + "icon_error.png"
-            elif kind == "warning":
-                icon_path = preference_PATH + "icon_warning.png"
-            else:
-                icon_path = preference_PATH + "icon_info.png"
-
-            img = Image.open(icon_path)
-            img = img.resize((32, 32), Image.Resampling.LANCZOS)
-            icon_img = ImageTk.PhotoImage(img)
-            icon_label.configure(image=icon_img)
-            icon_label.image = icon_img  # ← 重要（GC防止）
-        except Exception:
-            # fallback（テキスト）
-            icon_label.configure(text="!", fg="red")
-
-        # ===== メッセージ =====
-        msg_frame = ttk.Frame(frame)
-        msg_frame.pack(side="left", fill="both", expand=True)
-
-        ttk.Label(
-            msg_frame,
-            text=message,
-            wraplength=480,
-            justify="left",
-        ).pack(anchor="w")
-
-        # ===== ボタン =====
-        ttk.Button(frame, text="OK", command=win.destroy).pack(anchor="e", pady=(12, 0))
-
-        # ===== 位置中央 =====
-        win.update_idletasks()
-        x = self.winfo_x() + (self.winfo_width() - win.winfo_width()) // 2
-        y = self.winfo_y() + (self.winfo_height() - win.winfo_height()) // 2
-        win.geometry(f"+{x}+{y}")
-
-        win.bind("<Escape>", lambda _e: win.destroy())
-        win.wait_window()
-
     def build_ui(self):
         self.setup_menu()
 
@@ -1285,7 +1223,7 @@ class SequencerGUI(tk.Tk):
         try:
             if Image is None or ImageTk is None:
                 raise RuntimeError("Pillow is not installed")
-            logo_path = preference_PATH + "ssdl_icon.png"
+            logo_path = src_PATH + "logo/ssdl_icon.png"
             logo_img = Image.open(logo_path)
             logo_img.thumbnail((125, 40), Image.Resampling.LANCZOS)
             self.logo_img = ImageTk.PhotoImage(logo_img)
@@ -1428,6 +1366,19 @@ class SequencerGUI(tk.Tk):
     def log(self, tag, msg):
         self.q.put(("log", tag, msg))
 
+    def ask(self, message, sound="notification", title="PWI4 Sequencer", parent=None):
+        if sound == "alert":
+            play_alert_sound()
+        elif sound == "complete":
+            play_complete_sound()
+        elif sound == "end":
+            play_end_sound()
+        elif sound is False:
+            pass
+        else:
+            play_notification_sound()
+        return messagebox.askokcancel(title, message, parent=parent or self)
+
     def ask_from_runner(self, message, sound="notification"):
         result_q = queue.Queue()
         self.q.put(("ask", message, sound, result_q))
@@ -1450,13 +1401,7 @@ class SequencerGUI(tk.Tk):
                     self.add_log(tag, msg)
                 elif item[0] == "ask":
                     _, msg, sound, result_q = item
-                    if sound == "alert":
-                        play_alert_sound()
-                    elif sound == False:
-                        pass
-                    else:
-                        play_notification_sound()
-                    result_q.put(messagebox.askokcancel("PWI4 Sequencer", msg, parent=self))
+                    result_q.put(self.ask(msg, sound=sound, parent=self))
                 elif item[0] == "select_file":
                     _, kwargs, result_q = item
                     result_q.put(filedialog.askopenfilename(**kwargs))
