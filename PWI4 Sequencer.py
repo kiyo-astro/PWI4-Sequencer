@@ -1057,7 +1057,6 @@ class SequencerGUI(tk.Tk):
 
     def handle_update_check_result(self, ok, latest_number, detail_text, error):
         self.config(cursor="")
-
         if not ok:
             self.add_log("error", f" X ERROR : Update check failed: {error}")
             self.ask(
@@ -1065,21 +1064,18 @@ class SequencerGUI(tk.Tk):
                 sound="alert",
                 title="Update check failed",
                 parent=self,
+                mode="ok",
             )
             return
 
         if latest_number <= int(version_number):
-            self.add_log(
-                "info",
-                f"   You are using the latest version. Current build: {version_number}, Latest build: {latest_number}"
-            )
+            self.add_log("info", f"   You are using the latest version. Current build: {version_number}, Latest build: {latest_number}")
             self.ask(
-                f"You are using the latest version.\n\n"
-                f"Current: Version {version} (Build {version_number})\n"
-                f"Latest build: {latest_number}",
-                sound="notification",
+                f"You are using the latest version.\n\nCurrent: Version {version} (Build {version_number})\nLatest build: {latest_number}",
+                sound="alert",
                 title="No updates available",
                 parent=self,
+                mode="ok",
             )
             return
 
@@ -1092,14 +1088,13 @@ class SequencerGUI(tk.Tk):
             "Do you want to download and install this update now?\n\n"
             "The application will close after preparing the updater."
         )
-
         do_update = self.ask(
             msg,
             sound="notification",
             title="Update available",
             parent=self,
+            mode="okcancel",
         )
-
         if do_update:
             self.download_and_prepare_update(latest_number)
 
@@ -1190,7 +1185,6 @@ class SequencerGUI(tk.Tk):
 
     def handle_update_prepare_result(self, ok, result, error):
         self.config(cursor="")
-
         if not ok:
             self.add_log("error", f" X ERROR : Failed to prepare update: {error}")
             self.ask(
@@ -1198,25 +1192,20 @@ class SequencerGUI(tk.Tk):
                 sound="alert",
                 title="Update failed",
                 parent=self,
+                mode="ok",
             )
             return
 
-        self.add_log(
-            "done",
-            f"   Update build {result['latest_number']} was downloaded. Closing app and starting installer..."
-        )
-
+        self.add_log("done", f"   Update build {result['latest_number']} was downloaded. Closing app and starting installer...")
         proceed = self.ask(
-            "The update has been downloaded.\n\n"
-            "The application will now close, install the update, and restart automatically.",
+            "The update has been downloaded.\n\nThe application will now close, install the update, and restart automatically.",
             sound="complete",
             title="Ready to update",
             parent=self,
+            mode="ok",
         )
-
         if not proceed:
             return
-
         subprocess.Popen(
             f'"{result["batch_path"]}"',
             shell=True,
@@ -1312,6 +1301,7 @@ class SequencerGUI(tk.Tk):
                     sound="alert",
                     title="Settings error",
                     parent=settings,
+                    mode="ok",
                 )
                 return
 
@@ -1324,6 +1314,7 @@ class SequencerGUI(tk.Tk):
                     sound="notification",
                     title="Settings saved",
                     parent=settings,
+                    mode="ok",
                 )
                 settings.destroy()
             except Exception as e:
@@ -1332,6 +1323,7 @@ class SequencerGUI(tk.Tk):
                     sound="alert",
                     title="Settings error",
                     parent=settings,
+                    mode="ok",
                 )
 
         button_frame = ttk.Frame(container)
@@ -1648,7 +1640,18 @@ class SequencerGUI(tk.Tk):
     def log(self, tag, msg):
         self.q.put(("log", tag, msg))
 
-    def ask(self, message, sound="notification", title="PWI4 Sequencer", parent=None):
+    def ask(self, message, sound="notification", title="PWI4 Sequencer", parent=None, mode="okcancel"):
+        """Show a standard Tk messagebox and return True/False.
+
+        mode="ok"       : OK button only. Always returns True after OK/close.
+                           If sound="alert", messagebox.showerror is used.
+                           Otherwise, messagebox.showinfo is used.
+        mode="okcancel" : OK and Cancel buttons. Returns True for OK, False for Cancel/close.
+        mode="yesno"    : Yes and No buttons. Returns True for Yes, False for No/close.
+
+        Sound playback is centralized here, so callers should not call
+        play_alert_sound(), play_notification_sound(), etc. separately.
+        """
         if sound == "alert":
             play_alert_sound()
         elif sound == "complete":
@@ -1659,7 +1662,24 @@ class SequencerGUI(tk.Tk):
             pass
         else:
             play_notification_sound()
-        return messagebox.askokcancel(title, message, parent=parent or self)
+
+        mode = str(mode).lower()
+        if mode not in {"ok", "okcancel", "yesno"}:
+            mode = "okcancel"
+
+        parent = parent or self
+
+        if mode == "ok":
+            if sound == "alert":
+                messagebox.showerror(title, message, parent=parent, icon="question")
+            else:
+                messagebox.showinfo(title, message, parent=parent, icon="question")
+            return True
+
+        if mode == "yesno":
+            return messagebox.askyesno(title, message, parent=parent, icon="question")
+
+        return messagebox.askokcancel(title, message, parent=parent, icon="question")
 
     def ask_from_runner(self, message, sound="notification"):
         result_q = queue.Queue()
