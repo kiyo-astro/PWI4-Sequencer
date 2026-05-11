@@ -1,4 +1,4 @@
-Update ver 2.0.1 (build 2026051020200)
+Update ver 2.0.2 (build 2026051020200)
 Release date : MAY 10, 2026
 
 Bugfix : support celestrak.org orbital elements format changes
