@@ -1,5 +1,9 @@
-Update ver 2.0.1 (build 2026050420100)
-Release date : MAY 4, 2026
+Update ver 2.0.1 (build 2026051020200)
+Release date : MAY 10, 2026
 
-Bugfix : setting confirm window at Space-track.org setting fixed
-Update : internal update (menu bar > PWI 4 Sequencer > Check for updates...)
+Bugfix : support celestrak.org orbital elements format changes
+
+Please refer to celestrak.org for additional detail about orbital elements dataset format changes.
+https://celestrak.org/NORAD/documentation/gp-data-formats.php
+
+CAUTION : This version does NOT fully support 6 digits NORAD CAT ID. Please wait further update for the full modification.

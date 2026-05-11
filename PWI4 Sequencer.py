@@ -11,13 +11,14 @@
 # bugfix 2026.04.07: Syntax error when receiving negative DEC value fixed (ver 1.0.6)           #
 # update 2026.04.28: GUI support and sequence file editor (ver 2.0.0)                           #
 # update 2026.05.04: Internal update function (ver 2.0.1)                                       #
+# bugfix 2026.05.10: Support celestrak.org orbital elements format changes (ver 2.0.2)          #
 #-----------------------------------------------------------------------------------------------#
 
 #-----------------------------------------------------------------------------------------------#
 # VERSION                                                                                       #
 #-----------------------------------------------------------------------------------------------#
-version = "2.0.1"
-version_number = 2026050420100
+version = "2.0.2"
+version_number = 2026051020200
 
 #-----------------------------------------------------------------------------------------------#
 # OPTIONS                                                                                       #
@@ -457,11 +458,11 @@ class SequenceRunner:
             except Exception:
                 tle_source = "CelesTrak.org"
             if tle_source == "Space-Track.org":
-                status_code, tle_result = astroKUBO_lib.space_track.get_recent_TLE(norad_id, user_id, password)
+                status_code, tle_result = astroKUBO_lib.space_track.get_latest_TLE(norad_id, user_id, password)
                 if status_code != 200:
                     tle_source = "CelesTrak.org"
             if tle_source == "CelesTrak.org":
-                status_code, tle_result = astroKUBO_lib.celes_trak.get_recent_TLE(norad_id)
+                status_code, tle_result = astroKUBO_lib.celes_trak.get_latest_TLE(norad_id)
             if status_code != 200:
                 self.sleep(1)
         try:

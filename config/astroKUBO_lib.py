@@ -2,7 +2,34 @@ import requests
 from datetime import datetime, timedelta
 
 class space_track:
-    def get_recent_TLE(norad_id,user_id,password):
+    def get_latest_TLE(
+            norad_id: int | str,
+            user_id: str,
+            password: str
+            ):
+        """
+        Get latest Two-Line Element set from space-track.org
+
+        Parameters
+        ----------
+        norad_id: `int` or `str`
+            NORAD catalog number
+        user_id: `str`
+            space-track.org user id
+        password: `str`
+            space-track.org password
+
+        Returns
+        -------
+        response.status_code: `int`
+            status code of query
+        tle_result: `str`
+            Two-Line Element set
+
+        Notes
+        -----
+            (c) 2025 Kiyoaki Okudaira - Kyushu University Hanada Lab (SSDL) / IAU CPS SatHub
+        """
         # Start Session
         session = requests.Session()
 
@@ -15,7 +42,7 @@ class space_track:
 
         response = session.post(login_url, data=login_payload)
         if response.status_code != 200:
-            tle_result = "FAILED TO LOG IN"
+            tle_result = None
         
         else:
             # Get TLE data
@@ -26,22 +53,39 @@ class space_track:
             )
 
             response = session.get(query_url, stream=True)
-
-            if response.status_code == 200:
-                tle_result = response.text
-            else:
-                tle_result = "FAILED TO GET TLE"
+            tle_result = response.text
 
         return response.status_code,tle_result
 
 class celes_trak:
-    def get_recent_TLE(norad_id):
+    def get_latest_TLE(
+            norad_id: int
+            ):
+        """
+        Get latest Two-Line Element set from space-track.org
+
+        Parameters
+        ----------
+        norad_id: `int` or `str`
+            NORAD catalog number
+
+        Returns
+        -------
+        response.status_code: `int`
+            status code of query
+        tle_result: `str`
+            Two-Line Element set
+
+        Notes
+        -----
+            (c) 2025 Kiyoaki Okudaira - Kyushu University Hanada Lab (SSDL) / IAU CPS SatHub
+        """
         # Start Session
         session = requests.Session()
 
         # Get TLE data
         query_url = (
-            "https://celestrak.org/NORAD/elements/gp.php?CATNR={0}".format(norad_id)
+            "https://celestrak.org/NORAD/elements/gp.php?CATNR={0}&FORMAT=TLE".format(norad_id)
         )
 
         response = session.get(query_url, stream=True)
@@ -49,9 +93,10 @@ class celes_trak:
         if response.status_code == 200:
             tle_result = response.text
         else:
-            tle_result = "FAILED TO GET TLE"
+            tle_result = None
 
         return response.status_code,tle_result
+
 class tle_reader:
     def parse_tle_epoch(tle_line1):
         try:
