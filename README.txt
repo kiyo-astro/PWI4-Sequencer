@@ -1,5 +1,5 @@
 #-----------------------------------------------------------------------------------------------#
-# PWI4 Sequencer for SSDL BULL's-eye VER 2.0.2 BUILD 2026051020200                              #
+# PWI4 Sequencer for SSDL BULL's-eye VER 2.0.3 BUILD 2026061800000                              #
 # Copyright 2026 Kiyoaki Okudaira * Kyushu University / IAU-CPS SatHub                          #
 #-----------------------------------------------------------------------------------------------#
 
@@ -16,6 +16,7 @@
 # update 2026.04.28: GUI support and sequence file editor (ver 2.0.0)                           #
 # update 2026.05.04: Internal update function (ver 2.0.1)                                       #
 # bugfix 2026.05.10: Support celestrak.org orbital elements format changes (ver 2.0.2)          #
+# update 2026.06.18: Support TRACKSAT FROM=ALT=deg trigger (ver 2.0.3)                          #
 #-----------------------------------------------------------------------------------------------#
 
 #-----------------------------------------------------------------------------------------------#

@@ -12,13 +12,14 @@
 # update 2026.04.28: GUI support and sequence file editor (ver 2.0.0)                           #
 # update 2026.05.04: Internal update function (ver 2.0.1)                                       #
 # bugfix 2026.05.10: Support celestrak.org orbital elements format changes (ver 2.0.2)          #
+# update 2026.06.18: Support TRACKSAT FROM=ALT=deg trigger (ver 2.0.3)                          #
 #-----------------------------------------------------------------------------------------------#
 
 #-----------------------------------------------------------------------------------------------#
 # VERSION                                                                                       #
 #-----------------------------------------------------------------------------------------------#
-version = "2.0.2"
-version_number = 2026051020200
+version = "2.0.3"
+version_number = 2026061800000
 
 #-----------------------------------------------------------------------------------------------#
 # OPTIONS                                                                                       #
@@ -29,6 +30,7 @@ version_number = 2026051020200
 # IMPORT                                                                                        #
 #-----------------------------------------------------------------------------------------------#
 import json
+import math
 import os
 import queue
 import threading
@@ -46,7 +48,7 @@ try:
 except Exception:
     certifi = None
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from os import path
 import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog, ttk
@@ -172,6 +174,23 @@ except Exception:
     astroKUBO_lib = None
 
 #-----------------------------------------------------------------------------------------------#
+# Default observatory/SPICE settings for satellite-altitude waiting.                             #
+# These defaults are for Kyushu University Pegasus Observatory. Override them in a sequence line
+# with LAT=..., LON=..., HEIGHT=..., and SPICE=... when observing from another site.
+#-----------------------------------------------------------------------------------------------#
+DEFAULT_OBS_LON_DEG = 130.211667
+DEFAULT_OBS_LAT_DEG = 33.598889
+DEFAULT_OBS_HEIGHT_M = 73.0
+DEFAULT_SAT_ALT_CHECK_INTERVAL_SEC = 5.0
+DEFAULT_SPICE_META_KERNEL_CANDIDATES = [
+    src_PATH + "spice/myfile.tm",
+    src_PATH + "spice/kernels.tm",
+    appPATH + "spice/myfile.tm",
+    appPATH + "spice/kernels.tm",
+    appPATH + "myfile.tm",
+]
+
+#-----------------------------------------------------------------------------------------------#
 # Utilities                                                                                     #
 #-----------------------------------------------------------------------------------------------#
 def play_sound(sound_path):
@@ -211,6 +230,16 @@ def dms2deg(dec_dms: str) -> float:
 
 def normalize_line(line: str) -> str:
     return " ".join(line.strip().split())
+
+
+def parse_key_value_tokens(tokens):
+    """Parse KEY=VALUE tokens while preserving values such as TO=ALT=15."""
+    options = {}
+    for token in tokens:
+        if "=" in token:
+            key, value = token.split("=", 1)
+            options[key.upper()] = value
+    return options
 
 
 def is_executable_sequence(line: str) -> bool:
@@ -254,7 +283,11 @@ def sequence_schedule_label(line: str) -> str:
             at = parts[3].split("=", 1)[1]
             return format_sequence_time_value(at)
         if cmd == "TRACKSAT" and len(parts) >= 3:
-            from_value = parts[2].split("=", 1)[1]
+            opts = parse_key_value_tokens(parts[2:])
+            from_value = opts.get("FROM", parts[2].split("=", 1)[1])
+            if from_value.upper().startswith(("ALT=", "EL=")):
+                alt_value = from_value.split("=", 1)[1]
+                return f"Sat El >= {alt_value} deg"
             return format_sequence_time_value(from_value)
         if cmd == "SCSOLVEANDSYNC":
             return "Input"
@@ -292,7 +325,7 @@ BLOCKS = [
     BlockSpec("GOTORADEC", "GOTORADEC", (("ra", "RA hh:mm:ss", "20:47:55.0"), ("dec", "DEC ±dd:mm:ss", "+10:22:31.8"), ("at", "AT time / ASAP / ENTER", "ASAP")), lambda v: f"GOTORADEC RA={v['ra']} DEC={v['dec']} AT={v['at']}"),
     BlockSpec("GOTOAPPARENTRADEC", "GOTOAPPARENTRADEC", (("ra", "RA hh:mm:ss", "20:47:55.0"), ("dec", "DEC ±dd:mm:ss", "+10:22:31.8"), ("at", "AT time / ASAP / ENTER", "ASAP")), lambda v: f"GOTOAPPARENTRADEC RA={v['ra']} DEC={v['dec']} AT={v['at']}"),
     BlockSpec("GOTOALTAZ", "GOTOALTAZ", (("alt", "ALT deg", "45.0"), ("az", "AZ deg", "180.0"), ("at", "AT time / ASAP / ENTER", "ASAP")), lambda v: f"GOTOALTAZ ALT={v['alt']} AZ={v['az']} AT={v['at']}"),
-    BlockSpec("TRACKSAT", "TRACKSAT", (("target", "NORAD CAT ID / CUSTOM", "25544"), ("from", "FROM time / ASAP / ENTER", "ASAP"), ("to", "TO time / ALT=deg / ENTER / FALSE", "ALT=15")), lambda v: f"TRACKSAT {v['target']} FROM={v['from']} TO={v['to']}"),
+    BlockSpec("TRACKSAT", "TRACKSAT", (("target", "NORAD CAT ID / CUSTOM", "25544"), ("from", "FROM time / ASAP / ENTER / ALT=deg", "ASAP"), ("to", "TO time / ALT=deg / ENTER / FALSE", "ALT=15")), lambda v: f"TRACKSAT {v['target']} FROM={v['from']} TO={v['to']}"),
     BlockSpec("ENABLETRACKSTAR", "ENABLETRACKSTAR", (), lambda v: "ENABLETRACKSTAR"),
     BlockSpec("DISABLETRACKSTAR", "DISABLETRACKSTAR", (), lambda v: "DISABLETRACKSTAR"),
     BlockSpec("STOPMOUNT", "STOPMOUNT", (), lambda v: "STOPMOUNT"),
@@ -345,6 +378,208 @@ class SequenceRunner:
             altitude_degs_former = altitude_degs
             self.sleep(1)
         self.log("info", "   Done")
+
+    def resolve_spice_meta_kernel(self, spice_meta_kernel=None):
+        """Return a SPICE meta-kernel path for satphotometry/satorbit calculations."""
+        candidates = []
+        if spice_meta_kernel and spice_meta_kernel.upper() not in {"AUTO", "DEFAULT"}:
+            candidate = spice_meta_kernel.strip().strip('"')
+            if not path.isabs(candidate):
+                candidate = path.join(appPATH, candidate)
+            candidates.append(candidate)
+        candidates.extend(DEFAULT_SPICE_META_KERNEL_CANDIDATES)
+        for candidate in candidates:
+            if path.exists(candidate):
+                return candidate
+        raise FileNotFoundError(
+            "SPICE meta-kernel was not found. Set SPICE=path/to/myfile.tm in the sequence "
+            "or place myfile.tm under _internal/src/spice/."
+        )
+
+    def _satphotometry_altaz_at_et(
+        self, satorbit, spice, earth_constants, elems, obs_itrf, lon_rad, lat_rad, et
+    ):
+        """Calculate satellite Az/El/RA/Dec at a SPICE ephemeris time."""
+        state_teme = spice.evsgp4(float(et), earth_constants, elems)
+        state_j2000 = satorbit.teme2J2000(state_teme, float(et))
+        state_itrf = satorbit.J20002itrf(state_j2000, float(et))
+        obs_j2000 = satorbit.itrf2J2000(obs_itrf, float(et))
+
+        _range_itrf, az_rad, el_rad = satorbit.itrf2azel(
+            state_itrf[0:3], obs_itrf, lon_rad, lat_rad
+        )
+        range_km, ra_rad, dec_rad = satorbit.J20002radec(state_j2000[0:3], obs_j2000)
+
+        return {
+            "az_deg": math.degrees(az_rad) % 360.0,
+            "el_deg": math.degrees(el_rad),
+            "ra_deg": math.degrees(ra_rad) % 360.0,
+            "dec_deg": math.degrees(dec_rad),
+            "range_km": float(range_km),
+        }
+
+    def _prepare_satphotometry_context(
+        self, tle_line1, tle_line2, lon_deg, lat_deg, height_m, spice_meta_kernel=None
+    ):
+        import spiceypy as spice
+        spice_path = src_PATH + "spice/myfile.tm"
+        spice.furnsh(spice_path)
+        from config import satorbit
+
+        lon_rad = math.radians(float(lon_deg))
+        lat_rad = math.radians(float(lat_deg))
+        height_m = float(height_m)
+
+        earth_constants = satorbit.get_planetconst(
+            399, ["J2", "J3", "J4", "KE", "QO", "SO", "ER", "AE"]
+        )
+        obs_itrf = satorbit.geo2itrf(lon_rad, lat_rad, height_m / 1000.0)
+        _epoch, elems = satorbit.parse_TLE2element(tle_line1, tle_line2)
+
+        return {
+            "spice": spice,
+            "satorbit": satorbit,
+            "earth_constants": earth_constants,
+            "elems": elems,
+            "obs_itrf": obs_itrf,
+            "lon_rad": lon_rad,
+            "lat_rad": lat_rad,
+        }
+
+    def satphotometry_altaz_now(self, tle_line1, tle_line2, lon_deg, lat_deg, height_m, spice_meta_kernel=None):
+        """Calculate current satellite Az/El from TLE using satphotometry.satorbit."""
+        ctx = self._prepare_satphotometry_context(
+            tle_line1, tle_line2, lon_deg, lat_deg, height_m, spice_meta_kernel
+        )
+        now_utc_dt = datetime.now(timezone.utc).replace(microsecond=0)
+        now_utc = now_utc_dt.strftime("%Y-%m-%dT%H:%M:%S")
+        et = ctx["spice"].utc2et(now_utc)
+        pos = self._satphotometry_altaz_at_et(
+            ctx["satorbit"], ctx["spice"], ctx["earth_constants"], ctx["elems"],
+            ctx["obs_itrf"], ctx["lon_rad"], ctx["lat_rad"], et
+        )
+        pos["utc"] = now_utc
+        return pos
+
+    def predict_sat_alt_start(
+        self, tle_line1, tle_line2, alt_threshold_deg,
+        lon_deg=DEFAULT_OBS_LON_DEG, lat_deg=DEFAULT_OBS_LAT_DEG,
+        height_m=DEFAULT_OBS_HEIGHT_M, spice_meta_kernel=None,
+        search_hours=2.0, step_sec=DEFAULT_SAT_ALT_CHECK_INTERVAL_SEC
+    ):
+        """Predict the first UTC time within the next search_hours when El >= threshold."""
+        alt_threshold_deg = float(alt_threshold_deg)
+        step_sec = max(1.0, float(step_sec))
+        ctx = self._prepare_satphotometry_context(
+            tle_line1, tle_line2, lon_deg, lat_deg, height_m, spice_meta_kernel
+        )
+
+        start_dt = datetime.now(timezone.utc).replace(microsecond=0)
+        end_dt = start_dt + timedelta(hours=float(search_hours))
+
+        def calc_at(dt_utc):
+            utc = dt_utc.strftime("%Y-%m-%dT%H:%M:%S")
+            et = ctx["spice"].utc2et(utc)
+            pos = self._satphotometry_altaz_at_et(
+                ctx["satorbit"], ctx["spice"], ctx["earth_constants"], ctx["elems"],
+                ctx["obs_itrf"], ctx["lon_rad"], ctx["lat_rad"], et
+            )
+            pos["utc"] = utc
+            return pos
+
+        prev_dt = start_dt
+        prev_pos = calc_at(prev_dt)
+        if prev_pos["el_deg"] >= alt_threshold_deg:
+            return prev_pos
+
+        dt = start_dt + timedelta(seconds=step_sec)
+        while dt <= end_dt:
+            self._check_stop()
+            pos = calc_at(dt)
+            if pos["el_deg"] >= alt_threshold_deg:
+                # Refine the threshold-crossing time to approximately 1 second.
+                low_dt = prev_dt
+                high_dt = dt
+                while (high_dt - low_dt).total_seconds() > 1.0:
+                    mid_dt = low_dt + (high_dt - low_dt) / 2
+                    mid_pos = calc_at(mid_dt)
+                    if mid_pos["el_deg"] >= alt_threshold_deg:
+                        high_dt = mid_dt
+                    else:
+                        low_dt = mid_dt
+                if high_dt.microsecond:
+                    high_dt = high_dt.replace(microsecond=0) + timedelta(seconds=1)
+                return calc_at(high_dt)
+            prev_dt = dt
+            prev_pos = pos
+            dt += timedelta(seconds=step_sec)
+
+        return None
+
+    def wait_sat_alt_above(
+        self, tle1, tle2, tle3, alt_threshold_deg, check_interval_sec=1.0,
+        lon_deg=DEFAULT_OBS_LON_DEG, lat_deg=DEFAULT_OBS_LAT_DEG,
+        height_m=DEFAULT_OBS_HEIGHT_M, spice_meta_kernel=None
+    ):
+        """Wait until the satellite elevation calculated from TLE is above a threshold."""
+        alt_threshold_deg = float(alt_threshold_deg)
+        check_interval_sec = max(0.2, float(check_interval_sec))
+        self.log("info", f"   Site: lat={float(lat_deg):.3f} deg, lon={float(lon_deg):.3f} deg, height={float(height_m):.1f} m")
+        expected = self.predict_sat_alt_start(
+            tle2, tle3, alt_threshold_deg,
+            lon_deg=lon_deg, lat_deg=lat_deg, height_m=height_m,
+            spice_meta_kernel=spice_meta_kernel,
+            search_hours=2.0,
+            step_sec=DEFAULT_SAT_ALT_CHECK_INTERVAL_SEC,
+        )
+        if expected is None:
+            self.log("warning", "   Expected tracking start time : Not found within next 2 hours")
+        else:
+            self.log("info", f"   Expected tracking start time : {expected['utc']} UTC")
+            self.log(
+                "info",
+                "   (ALT={el:.1f} deg AZ={az:.1f} deg RA={ra:.2f} deg "
+                "DEC={dec:.2f} deg Range={rng:.0f} km)".format(
+                    el=expected["el_deg"], az=expected["az_deg"],
+                    ra=expected["ra_deg"], dec=expected["dec_deg"],
+                    rng=expected["range_km"],
+                )
+            )
+        self.log(
+            "info",
+            f"   Holding until satellite altitude is above {alt_threshold_deg:.2f} deg "
+        )
+
+        while True:
+            self._check_stop()
+            pos = self.satphotometry_altaz_now(tle2, tle3, lon_deg, lat_deg, height_m, spice_meta_kernel)
+            self.log(
+                "info",
+                "   {utc} | ALT={el:.1f} deg AZ={az:.1f} deg "
+                "RA={ra:.2f} deg DEC={dec:.2f} deg Range={rng:.0f} km".format(
+                    utc=pos["utc"], el=pos["el_deg"], az=pos["az_deg"],
+                    ra=pos["ra_deg"], dec=pos["dec_deg"], rng=pos["range_km"]
+                )
+            )
+            if pos["el_deg"] >= alt_threshold_deg:
+                self.log("info", "   Satellite altitude condition satisfied")
+                break
+            self.sleep(check_interval_sec, step=min(0.5, check_interval_sec))
+        self.log("info", "   Done")
+
+    def stop_tracking_by_to_value(self, to_value):
+        """Apply the TO=... behavior used by TRACKSAT."""
+        if to_value.upper() == "FALSE":
+            return
+        if to_value.upper().startswith("ALT="):
+            self.wait_alt(to_value.split("=", 1)[1])
+            self.pwi4.mount_stop(); self.log("info", "   Mount stopped")
+        elif to_value.upper() == "ENTER":
+            self.wait_enter()
+            self.pwi4.mount_stop(); self.log("info", "   Mount stopped")
+        else:
+            self.wait_dt(to_value)
+            self.pwi4.mount_stop(); self.log("info", "   Mount stopped")
 
     def wait_enter(self, message="Enter to run next sequence"):
         self.log("prompt", f" * {message} :")
@@ -466,8 +701,20 @@ class SequenceRunner:
             if status_code != 200:
                 self.sleep(1)
         try:
-            lines = tle_result.split("\n")
-            tle1, tle2, tle3 = lines[0], lines[1], lines[2]
+            # 改行コード \n, \r\n, \r の混在に対応
+            lines = [ln.strip() for ln in str(tle_result).splitlines() if ln.strip()]
+
+            # 3行TLE: name, line1, line2
+            if len(lines) >= 3 and lines[1].startswith("1 ") and lines[2].startswith("2 "):
+                tle1, tle2, tle3 = lines[0], lines[1], lines[2]
+
+            # 2行TLE: line1, line2
+            elif len(lines) >= 2 and lines[0].startswith("1 ") and lines[1].startswith("2 "):
+                tle1 = f"NORAD {norad_id}"
+                tle2, tle3 = lines[0], lines[1]
+
+            else:
+                raise ValueError(f"Invalid TLE format: {lines!r}")
             epoch = astroKUBO_lib.tle_reader.parse_tle_epoch(tle2)
             self.log("info", f"   Done")
             self.log("info", f"   Downloaded TLE is shown below (Epoch {epoch} | Source {tle_source})")
@@ -623,29 +870,44 @@ class SequenceRunner:
         elif cmd == "SCSOLVEANDSYNC":
             self.sc_solveandsync()
         elif cmd == "TRACKSAT":
+            # Syntax:
+            # TRACKSAT 25544 FROM=ASAP TO=ALT=15
+            # TRACKSAT 25544 FROM=ALT=15.5 TO=FALSE
+            # Optional site/kernel overrides for FROM=ALT=...:
+            # TRACKSAT 25544 FROM=ALT=15.5 TO=FALSE LAT=33.598889 LON=130.211667 HEIGHT=73 SPICE=_internal/src/spice/myfile.tm
+            if len(seq) < 4:
+                raise ValueError("TRACKSAT requires target, FROM=..., and TO=...")
+            opts = parse_key_value_tokens(seq[2:])
+            from_value = opts.get("FROM")
+            to_value = opts.get("TO")
+            if from_value is None or to_value is None:
+                raise ValueError("TRACKSAT requires FROM=... and TO=...")
+
             if seq[1] == "CUSTOM":
                 tle1, tle2, tle3 = self.parse_TLE()
             else:
                 tle1, tle2, tle3 = self.get_TLE(seq[1])
             if tle1 is not False:
-                from_value = seq[2].split("=", 1)[1]
-                if from_value == "ENTER":
+                from_upper = from_value.upper()
+                if from_upper == "ENTER":
                     self.wait_enter()
-                elif from_value != "ASAP":
+                elif from_upper.startswith(("ALT=", "EL=")):
+                    alt_threshold = from_value.split("=", 1)[1]
+                    st = self.pwi4.status()
+                    lon_deg = st.site.longitude_degs
+                    lat_deg = st.site.latitude_degs
+                    height_m = st.site.height_meters
+                    spice_meta_kernel = opts.get("SPICE", None)
+                    self.wait_sat_alt_above(
+                        tle1, tle2, tle3, alt_threshold, DEFAULT_SAT_ALT_CHECK_INTERVAL_SEC,
+                        lon_deg=lon_deg, lat_deg=lat_deg, height_m=height_m,
+                        spice_meta_kernel=spice_meta_kernel,
+                    )
+                elif from_upper != "ASAP":
                     self.wait_dt(from_value)
+
                 self.track_sat(tle1, tle2, tle3)
-                to_token = seq[3]
-                to_value = to_token.split("=", 1)[1]
-                if to_value.upper() != "FALSE":
-                    if to_value.upper().startswith("ALT="):
-                        self.wait_alt(to_value.split("=", 1)[1])
-                        self.pwi4.mount_stop(); self.log("info", "   Mount stopped")
-                    elif to_value.upper() == "ENTER":
-                        self.wait_enter()
-                        self.pwi4.mount_stop(); self.log("info", "   Mount stopped")
-                    else:
-                        self.wait_dt(to_value)
-                        self.pwi4.mount_stop(); self.log("info", "   Mount stopped")
+                self.stop_tracking_by_to_value(to_value)
             else:
                 self.log("error", " X ERROR : Invalid TLE format or no TLE data found")
         elif cmd == "ENABLETRACKSTAR":
