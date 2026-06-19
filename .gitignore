@@ -1,6 +1,7 @@
 src/
 build/
 dist/PWI4 Sequencer/
+dist/PWI4 Sequencer.zip
 makeandinstall.bat
 PWI4 Sequencer.spec
 .DS_Store
