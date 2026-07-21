@@ -13,13 +13,14 @@
 # update 2026.05.04: Internal update function (ver 2.0.1)                                       #
 # bugfix 2026.05.10: Support celestrak.org orbital elements format changes (ver 2.0.2)          #
 # update 2026.06.18: Support TRACKSAT FROM=ALT=deg trigger (ver 2.0.3)                          #
+# bugfix 2026.07.21: Prevent repeated SPICE kernel loading during FROM=ALT wait (ver 2.0.4)      #
 #-----------------------------------------------------------------------------------------------#
 
 #-----------------------------------------------------------------------------------------------#
 # VERSION                                                                                       #
 #-----------------------------------------------------------------------------------------------#
-version = "2.0.3"
-version_number = 2026061800000
+version = "2.0.4"
+version_number = 2026072120400
 
 #-----------------------------------------------------------------------------------------------#
 # OPTIONS                                                                                       #
@@ -189,6 +190,11 @@ DEFAULT_SPICE_META_KERNEL_CANDIDATES = [
     appPATH + "spice/kernels.tm",
     appPATH + "myfile.tm",
 ]
+
+# Process-wide cache: SequenceRunner objects can be recreated without reloading
+# the same meta-kernel into SPICE KEEPER.
+_SPICE_LOADED_KERNELS = set()
+_SPICE_KERNEL_LOAD_LOCK = threading.Lock()
 
 #-----------------------------------------------------------------------------------------------#
 # Utilities                                                                                     #
@@ -422,8 +428,17 @@ class SequenceRunner:
         self, tle_line1, tle_line2, lon_deg, lat_deg, height_m, spice_meta_kernel=None
     ):
         import spiceypy as spice
-        spice_path = src_PATH + "spice/myfile.tm"
-        spice.furnsh(spice_path)
+        spice_path = path.abspath(self.resolve_spice_meta_kernel(spice_meta_kernel))
+
+        # furnsh() adds entries to SPICE KEEPER every time it is called, even for
+        # the same meta-kernel. FROM=ALT polling can run for many minutes, so load
+        # each kernel only once for the lifetime of this SequenceRunner.
+        normalized_spice_path = path.normcase(path.normpath(spice_path))
+        with _SPICE_KERNEL_LOAD_LOCK:
+            if normalized_spice_path not in _SPICE_LOADED_KERNELS:
+                spice.furnsh(spice_path)
+                _SPICE_LOADED_KERNELS.add(normalized_spice_path)
+
         from config import satorbit
 
         lon_rad = math.radians(float(lon_deg))
@@ -532,6 +547,9 @@ class SequenceRunner:
             search_hours=2.0,
             step_sec=DEFAULT_SAT_ALT_CHECK_INTERVAL_SEC,
         )
+        ctx = self._prepare_satphotometry_context(
+            tle2, tle3, lon_deg, lat_deg, height_m, spice_meta_kernel
+        )
         if expected is None:
             self.log("warning", "   Expected tracking start time : Not found within next 2 hours")
         else:
@@ -552,7 +570,14 @@ class SequenceRunner:
 
         while True:
             self._check_stop()
-            pos = self.satphotometry_altaz_now(tle2, tle3, lon_deg, lat_deg, height_m, spice_meta_kernel)
+            now_utc_dt = datetime.now(timezone.utc).replace(microsecond=0)
+            now_utc = now_utc_dt.strftime("%Y-%m-%dT%H:%M:%S")
+            et = ctx["spice"].utc2et(now_utc)
+            pos = self._satphotometry_altaz_at_et(
+                ctx["satorbit"], ctx["spice"], ctx["earth_constants"], ctx["elems"],
+                ctx["obs_itrf"], ctx["lon_rad"], ctx["lat_rad"], et
+            )
+            pos["utc"] = now_utc
             self.log(
                 "info",
                 "   {utc} | ALT={el:.1f} deg AZ={az:.1f} deg "

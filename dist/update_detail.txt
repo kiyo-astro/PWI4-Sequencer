@@ -1,10 +1,7 @@
-Update ver 2.0.3 (build 2026061800000)
-Release date : JUNE 18, 2026
+Update ver 2.0.4 (build 2026072120400)
+Release date : JULY 21, 2026
 
-update : Support TRACKSAT FROM=ALT=deg trigger.
-         SPICE Toolkit integration
+bugfix : Modify SPICE kernel overflow error when using altitude trigger.
 
-ALERT : We will run out of 5-digit catalog numbers at 69999 not 99999, which is estimated to occur around 2026‑07‑12 (we're currently at 69635). At that point, newly cataloged objects will have 6-digit catalog numbers of 100000+ and GP data will not be available for them using the TLE format.
-
-Please refer to celestrak.org for additional detail about orbital elements dataset format changes.
+CAUTION : Please refer to celestrak.org for additional detail about orbital elements dataset format changes.
 https://celestrak.org/NORAD/documentation/gp-data-formats.php

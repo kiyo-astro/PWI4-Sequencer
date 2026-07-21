@@ -1,5 +1,5 @@
 #-----------------------------------------------------------------------------------------------#
-# PWI4 Sequencer for SSDL BULL's-eye VER 2.0.3 BUILD 2026061800000                              #
+# PWI4 Sequencer for SSDL BULL's-eye VER 2.0.4 BUILD 2026072120400                              #
 # Copyright 2026 Kiyoaki Okudaira * Kyushu University / IAU-CPS SatHub                          #
 #-----------------------------------------------------------------------------------------------#
 
@@ -17,11 +17,12 @@
 # update 2026.05.04: Internal update function (ver 2.0.1)                                       #
 # bugfix 2026.05.10: Support celestrak.org orbital elements format changes (ver 2.0.2)          #
 # update 2026.06.18: Support TRACKSAT FROM=ALT=deg trigger (ver 2.0.3)                          #
+# update 2026.07.21: Modify SPICE kernel overflow error when using altitude trigger (ver 2.0.4) #
 #-----------------------------------------------------------------------------------------------#
 
 #-----------------------------------------------------------------------------------------------#
 # SUPPORT                                                                                       #
 #-----------------------------------------------------------------------------------------------#
 # Kiyoaki Okudaira - Kyushu University Hanada Lab / IAU-CPS SatHub                              #
-# kiyoaki@uw.edu / okudaira.kiyoaki.528@s.kyushu-u.ac.jp                                        #
+# kiyoaki[at]uw.edu / okudaira.kiyoaki.528[at]s.kyushu-u.ac.jp                                  #
 #-----------------------------------------------------------------------------------------------#
