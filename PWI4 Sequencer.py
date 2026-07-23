@@ -13,14 +13,14 @@
 # update 2026.05.04: Internal update function (ver 2.0.1)                                       #
 # bugfix 2026.05.10: Support celestrak.org orbital elements format changes (ver 2.0.2)          #
 # update 2026.06.18: Support TRACKSAT FROM=ALT=deg trigger (ver 2.0.3)                          #
-# bugfix 2026.07.21: Prevent repeated SPICE kernel loading during FROM=ALT wait (ver 2.0.4)      #
+# bugfix 2026.07.21: Prevent repeated SPICE kernel loading during FROM=ALT wait (ver 2.0.4)     #
 #-----------------------------------------------------------------------------------------------#
 
 #-----------------------------------------------------------------------------------------------#
 # VERSION                                                                                       #
 #-----------------------------------------------------------------------------------------------#
 version = "2.0.4"
-version_number = 2026072120400
+version_number = 2026072320401
 
 #-----------------------------------------------------------------------------------------------#
 # OPTIONS                                                                                       #

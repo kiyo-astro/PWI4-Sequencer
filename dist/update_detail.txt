@@ -1,7 +1,8 @@
-Update ver 2.0.4 (build 2026072120400)
-Release date : JULY 21, 2026
+Update ver 2.0.4 (build 2026072320401)
+Release date : JULY 23, 2026
 
 bugfix : Modify SPICE kernel overflow error when using altitude trigger.
+build 2026072320401 : SharpCap Plate-Solve Sequence modification patch
 
 CAUTION : Please refer to celestrak.org for additional detail about orbital elements dataset format changes.
 https://celestrak.org/NORAD/documentation/gp-data-formats.php
